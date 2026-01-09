@@ -1,0 +1,4 @@
+# file: C:\Users\sangi\Desktop\cyber\src\report_generator.py
+# hypothesis_version: 6.148.8
+
+[0.1, 0.25, 0.5, 0.8, 1.2, 1.5, 1.8, '%Y-%m-%d %H:%M:%S', '-', '...', '=', 'ALIGN', 'Account Number', 'Address', 'BACKGROUND', 'BOTTOMPADDING', 'Bank Name', 'CENTER', 'Data Quality Metrics', 'END OF AUDIT LOG', 'ERRORS ENCOUNTERED', 'FONTNAME', 'FONTSIZE', 'GRID', 'Heading1', 'Heading2', 'Helvetica-Bold', 'IFSC Code', 'LEFT', 'Metric', 'Normal', 'RIGHT', 'ROWBACKGROUNDS', 'Risk Score', 'Rows Processed', 'Rows with Errors', 'Summary Statistics', 'TEXTCOLOR', 'Total Amount', 'Total Fraud Amount', 'Total Input Rows', 'Total Transactions', 'Transactions', 'Value', 'openpyxl', 'utf-8']

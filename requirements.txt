@@ -1,0 +1,9 @@
+streamlit
+pandas
+openpyxl
+xlrd
+rapidfuzz
+hypothesis
+pytest
+pytest-cov
+reportlab

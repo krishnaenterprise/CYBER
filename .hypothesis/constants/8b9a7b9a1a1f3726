@@ -1,0 +1,4 @@
+# file: C:\Users\sangi\Desktop\cyber\src\data_processor.py
+# hypothesis_version: 6.148.8
+
+[0.0, '$', '(', ')', ',', '-', 'INR', 'None', 'Rs', 'Rs.', 'USD', '[\\s\\-]', '^\\s*$', 'all', 'nan', 'object', '£', '€', '₹']

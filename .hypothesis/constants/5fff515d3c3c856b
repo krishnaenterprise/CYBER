@@ -1,0 +1,4 @@
+# file: C:\Users\sangi\Desktop\cyber\src\validation_engine.py
+# hypothesis_version: 6.148.8
+
+[0.0, 100, 'DUPLICATE_ACK', 'FILE_CORRUPTED', 'FILE_TOO_LARGE', 'INVALID_ACCOUNT', 'INVALID_AMOUNT', 'INVALID_FORMAT', 'INVALID_IFSC_FORMAT', 'MISSING_ACCOUNT', 'MISSING_ADDRESS', 'MISSING_AMOUNT', 'MISSING_IFSC', 'NO_ACCOUNT_COLUMN', 'NO_AMOUNT_COLUMN', 'None', '\\D', 'amount', 'amount_validity_rate', 'bank_account_number', 'ifsc_validity_rate', 'missing_addresses', 'missing_amounts', 'missing_ifsc_codes', 'nan', 'total_rows', 'valid_amounts', 'valid_ifsc_codes']

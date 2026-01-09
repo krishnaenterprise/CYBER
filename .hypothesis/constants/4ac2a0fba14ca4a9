@@ -1,0 +1,4 @@
+# file: C:\Users\sangi\Desktop\cyber\src\column_detector.py
+# hypothesis_version: 6.148.8
+
+[0.0, 0.8, 1.0, 100.0, '#', '-', '.', '/', '[^a-z0-9\\s]', '\\s+', '_', 'a/c no', 'ac no', 'account no', 'account number', 'ack', 'ack no', 'ackno', 'acknowledgement no', 'acknowledgment no', 'address', 'amount', 'bank', 'bank a/c no', 'bank ac no', 'bank account no', 'bank account number', 'bank code', 'bank name', 'bank_account_number', 'bank_name', 'beneficiary ac', 'beneficiary account', 'beneficiary address', 'beneficiary bank', 'chargeback amount', 'claim amount', 'disputed', 'disputed amount', 'disputed amt', 'disputed_amount', 'fraud amount', 'ifsc', 'ifsc code', 'ifsc_code', 'location', 'receiving bank', 'ref no', 'reference no', 's.no', 'serial no', 'serial number', 'serial_number', 'sno', 'sr no', 'sr.no', 'transaction amount', 'transfer amount', 'txn amount']

@@ -1,0 +1,4 @@
+# file: C:\Users\sangi\Desktop\cyber\src\report_generator.py
+# hypothesis_version: 6.148.8
+
+['-', '=', 'Address', 'Bank Name', 'END OF AUDIT LOG', 'ERRORS ENCOUNTERED', 'IFSC Code', 'Risk Score', 'Total Amount', 'Total Transactions', 'openpyxl', 'utf-8']
