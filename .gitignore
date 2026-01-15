@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Data files (optional - remove if you want to track)
+*.xlsx
+*.csv
+data/*.xlsx
+data/*.csv
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Coverage
+.coverage
+htmlcov/
+
+# Hypothesis
+.hypothesis/
