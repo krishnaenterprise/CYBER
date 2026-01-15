@@ -173,14 +173,15 @@ def match_files_fast(suspect_df: pd.DataFrame, victim_df: pd.DataFrame,
 # ============== MAIN PAGE ==============
 
 def render_district_download_page():
-    """Render the district data download page with three tabs."""
+    """Render the district data download page with four tabs."""
     st.title("📍 Download District Wise Data")
     st.caption("⚡ Optimized for large datasets (millions of rows)")
     
-    main_tab1, main_tab2, main_tab3 = st.tabs([
+    main_tab1, main_tab2, main_tab3, main_tab4 = st.tabs([
         "🏠 Victim Data (Gujarat)", 
         "🔍 Suspect Data (All India)",
-        "🔗 Match Victim & Suspect"
+        "🔗 Match Victim & Suspect",
+        "🔄 Remove Duplicates by ACK"
     ])
     
     with main_tab1:
@@ -191,6 +192,9 @@ def render_district_download_page():
     
     with main_tab3:
         render_match_tab()
+    
+    with main_tab4:
+        render_remove_duplicates_tab()
 
 
 # ============== TAB 1: VICTIM DATA (GUJARAT) ==============
@@ -763,3 +767,176 @@ def render_match_results():
                     st.warning(f"No records found for {selected_district}")
     else:
         st.warning(f"No records found for {selected_state}")
+
+
+
+# ============== TAB 4: REMOVE DUPLICATES BY ACK ==============
+
+def render_remove_duplicates_tab():
+    """Render Remove Duplicates by ACK tab - keeps first entry per ACK number."""
+    st.subheader("🔄 Remove Duplicates by ACK Number")
+    st.markdown("""
+    Upload a file and remove duplicate entries based on **Acknowledgement Number (ACK)**.
+    - Keeps only the **first occurrence** of each ACK number
+    - Select up to **5 columns** for output (ACK is required, others optional)
+    """)
+    
+    st.markdown("---")
+    
+    # Upload file
+    uploaded_file = st.file_uploader(
+        "Upload Data File (Excel/CSV)",
+        type=['xlsx', 'xls', 'csv'],
+        key="dedup_file_upload",
+        help="Upload file containing data with ACK numbers"
+    )
+    
+    if uploaded_file is None:
+        st.info("📤 Please upload a file to continue")
+        return
+    
+    # Read file
+    with st.spinner("Loading file..."):
+        df = read_file_cached(uploaded_file.getvalue(), uploaded_file.name)
+    
+    st.success(f"✅ File loaded: **{len(df):,}** rows, **{len(df.columns)}** columns")
+    
+    with st.expander("📋 Preview Data (First 5 rows)", expanded=False):
+        st.dataframe(df.head(), use_container_width=True)
+    
+    st.markdown("---")
+    st.subheader("🔧 Select Columns")
+    
+    columns = list(df.columns)
+    columns_with_none = ["-- Not Selected --"] + columns
+    
+    # ACK Column (Required)
+    st.markdown("#### Required Column")
+    ack_col = st.selectbox(
+        "ACK Number Column (Required) *",
+        options=["-- Select Column --"] + columns,
+        key="dedup_ack_col",
+        help="This column will be used to identify and remove duplicates"
+    )
+    
+    if ack_col == "-- Select Column --":
+        st.warning("⚠️ Please select the ACK Number column")
+        return
+    
+    # Optional Columns (up to 4 more)
+    st.markdown("#### Optional Columns (Select up to 4 more)")
+    st.caption("These columns will be included in the output along with ACK Number")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        col2_select = st.selectbox(
+            "Column 2 (Optional)",
+            options=columns_with_none,
+            key="dedup_col2"
+        )
+        col3_select = st.selectbox(
+            "Column 3 (Optional)",
+            options=columns_with_none,
+            key="dedup_col3"
+        )
+    
+    with col2:
+        col4_select = st.selectbox(
+            "Column 4 (Optional)",
+            options=columns_with_none,
+            key="dedup_col4"
+        )
+        col5_select = st.selectbox(
+            "Column 5 (Optional)",
+            options=columns_with_none,
+            key="dedup_col5"
+        )
+    
+    # Build selected columns list
+    selected_cols = [ack_col]
+    for col in [col2_select, col3_select, col4_select, col5_select]:
+        if col != "-- Not Selected --" and col not in selected_cols:
+            selected_cols.append(col)
+    
+    st.info(f"**Selected columns:** {', '.join(selected_cols)}")
+    
+    st.markdown("---")
+    st.subheader("🚀 Process & Download")
+    
+    if st.button("🔄 Remove Duplicates", type="primary", use_container_width=True, key="dedup_process_btn"):
+        with st.spinner("Removing duplicates..."):
+            # Get only selected columns
+            result_df = df[selected_cols].copy()
+            
+            # Count before
+            total_before = len(result_df)
+            
+            # Remove duplicates - keep first occurrence
+            result_df = result_df.drop_duplicates(subset=[ack_col], keep='first')
+            
+            # Count after
+            total_after = len(result_df)
+            duplicates_removed = total_before - total_after
+            
+            # Add Sr. No. column at the beginning
+            result_df = result_df.reset_index(drop=True)
+            result_df.insert(0, 'Sr. No.', range(1, len(result_df) + 1))
+            
+            # Store in session state
+            st.session_state['dedup_result_df'] = result_df
+            st.session_state['dedup_stats'] = {
+                'before': total_before,
+                'after': total_after,
+                'removed': duplicates_removed
+            }
+        
+        st.success(f"✅ Duplicates removed successfully!")
+    
+    # Show results if available
+    if 'dedup_result_df' in st.session_state:
+        result_df = st.session_state['dedup_result_df']
+        stats = st.session_state['dedup_stats']
+        
+        # Show statistics
+        st.markdown("---")
+        st.subheader("📊 Results")
+        
+        stat_col1, stat_col2, stat_col3 = st.columns(3)
+        with stat_col1:
+            st.metric("Total Records (Before)", f"{stats['before']:,}")
+        with stat_col2:
+            st.metric("Unique ACK Records (After)", f"{stats['after']:,}")
+        with stat_col3:
+            st.metric("Duplicates Removed", f"{stats['removed']:,}")
+        
+        # Preview
+        with st.expander("📋 Preview Deduplicated Data", expanded=True):
+            st.dataframe(result_df.head(20), use_container_width=True)
+        
+        # Download
+        st.markdown("---")
+        st.subheader("📥 Download")
+        
+        download_col1, download_col2 = st.columns(2)
+        
+        with download_col1:
+            excel_bytes = generate_excel_bytes(result_df)
+            st.download_button(
+                label=f"⬇️ Download Excel ({stats['after']:,} records)",
+                data=excel_bytes,
+                file_name=f"deduplicated_by_ack_{stats['after']}_records.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary"
+            )
+        
+        with download_col2:
+            csv_bytes = result_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"⬇️ Download CSV ({stats['after']:,} records)",
+                data=csv_bytes,
+                file_name=f"deduplicated_by_ack_{stats['after']}_records.csv",
+                mime="text/csv",
+                use_container_width=True
+            )

@@ -35,6 +35,8 @@ from src.models import ColumnMapping, AggregatedAccount, ProcessingStats, Valida
 from src.district_data import render_district_download_page
 from src.merge_files import render_merge_files_page
 from src.excel_merger import render_excel_merger_page
+from src.call_notice_data_merge import render_call_notice_merge_page
+from src.database_service import DatabaseService
 
 # Page configuration
 st.set_page_config(
@@ -94,7 +96,9 @@ def render_sidebar():
             'processing': '⚙️ Processing',
             'results': '📊 Results Dashboard',
             'district_download': '📍 District Data Download',
-            'excel_merger': '📎 Merge Excel Files'
+            'excel_merger': '📎 Merge Excel Files',
+            'call_notice_merge': '📞 Call Notice Data Merge',
+            'view_database': '🗄️ View Database'
         }
         
         for page_key, page_name in pages.items():
@@ -106,7 +110,7 @@ def render_sidebar():
                 enabled = False
             elif page_key == 'results' and st.session_state.aggregated_accounts is None:
                 enabled = False
-            # district_download is always enabled
+            # district_download, excel_merger, call_notice_merge, view_database are always enabled
             
             if enabled:
                 if st.button(page_name, key=f"nav_{page_key}", use_container_width=True):
@@ -170,7 +174,7 @@ def render_upload_page():
         st.dataframe(preview_df, use_container_width=True)
         return
     
-    st.markdown("Upload **1 to 15 Excel/CSV files** using **Ctrl+Click** to select multiple files, then click **Process Files**.")
+    st.markdown("Upload **1 to 50 Excel/CSV files** using **Ctrl+Click** to select multiple files, then click **Process Files**.")
     
     # Multiple file uploader with Ctrl+Click support
     uploaded_files = st.file_uploader(
@@ -193,8 +197,8 @@ def render_upload_page():
         
         # Process Files button
         if st.button("🚀 Process Files", type="primary", use_container_width=True):
-            if len(uploaded_files) > 15:
-                st.warning("⚠️ Maximum 15 files allowed. Please remove some files.")
+            if len(uploaded_files) > 50:
+                st.warning("⚠️ Maximum 50 files allowed. Please remove some files.")
             else:
                 all_data = []
                 progress_bar = st.progress(0)
@@ -579,57 +583,164 @@ def render_results_page():
     
     st.markdown("---")
     
-    # Download Section
+    # Download Section - Lazy generation (no eager computation)
     st.subheader("📥 Download Reports")
     
-    download_cols = st.columns(4)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    quality_metrics = validation_result.quality_report if validation_result else None
+    errors = validation_result.warnings if validation_result else []
     
-    with download_cols[0]:
-        excel_bytes = report_generator.generate_excel_bytes(accounts)
-        st.download_button(
-            label="📊 Download Excel",
-            data=excel_bytes,
-            file_name=f"fraud_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
+    # Row 1: Download buttons
+    dl_col1, dl_col2, dl_col3, dl_col4 = st.columns(4)
     
-    with download_cols[1]:
-        csv_bytes = report_generator.generate_csv_bytes(accounts)
-        st.download_button(
-            label="📄 Download CSV",
-            data=csv_bytes,
-            file_name=f"fraud_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+    with dl_col1:
+        if st.button("📊 Prepare Excel", use_container_width=True, key="prep_excel"):
+            with st.spinner("Generating Excel..."):
+                st.session_state.excel_ready = report_generator.generate_excel_bytes(accounts)
+        
+        if 'excel_ready' in st.session_state and st.session_state.excel_ready:
+            st.download_button(
+                label="⬇️ Download Excel",
+                data=st.session_state.excel_ready,
+                file_name=f"fraud_analysis_{timestamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
     
-    with download_cols[2]:
-        quality_metrics = validation_result.quality_report if validation_result else None
-        pdf_bytes = report_generator.generate_pdf_bytes(accounts, stats, quality_metrics)
-        st.download_button(
-            label="📑 Download PDF",
-            data=pdf_bytes,
-            file_name=f"fraud_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
+    with dl_col2:
+        if st.button("📄 Prepare CSV", use_container_width=True, key="prep_csv"):
+            with st.spinner("Generating CSV..."):
+                st.session_state.csv_ready = report_generator.generate_csv_bytes(accounts)
+        
+        if 'csv_ready' in st.session_state and st.session_state.csv_ready:
+            st.download_button(
+                label="⬇️ Download CSV",
+                data=st.session_state.csv_ready,
+                file_name=f"fraud_analysis_{timestamp}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
     
-    with download_cols[3]:
-        errors = validation_result.warnings if validation_result else []
-        audit_log = report_generator.generate_audit_log(
-            input_filename=st.session_state.filename or "",
-            rows_processed=stats.rows_processed,
-            errors_encountered=errors,
-            timestamp=stats.processing_timestamp
-        )
-        st.download_button(
-            label="📋 Download Audit Log",
-            data=audit_log.encode('utf-8'),
-            file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
+    with dl_col3:
+        if st.button("📑 Prepare PDF", use_container_width=True, key="prep_pdf"):
+            with st.spinner("Generating PDF..."):
+                st.session_state.pdf_ready = report_generator.generate_pdf_bytes(accounts, stats, quality_metrics)
+        
+        if 'pdf_ready' in st.session_state and st.session_state.pdf_ready:
+            st.download_button(
+                label="⬇️ Download PDF",
+                data=st.session_state.pdf_ready,
+                file_name=f"fraud_analysis_{timestamp}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+    
+    with dl_col4:
+        if st.button("📋 Prepare Audit Log", use_container_width=True, key="prep_audit"):
+            with st.spinner("Generating Audit Log..."):
+                audit_log = report_generator.generate_audit_log(
+                    input_filename=st.session_state.filename or "",
+                    rows_processed=stats.rows_processed,
+                    errors_encountered=errors,
+                    timestamp=stats.processing_timestamp
+                )
+                st.session_state.audit_ready = audit_log.encode('utf-8')
+        
+        if 'audit_ready' in st.session_state and st.session_state.audit_ready:
+            st.download_button(
+                label="⬇️ Download Audit Log",
+                data=st.session_state.audit_ready,
+                file_name=f"audit_log_{timestamp}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+    
+    # Row 2: SAVE TO DATABASE - Prominent button
+    st.markdown("")
+    st.markdown("##### 🗄️ Save to MySQL Database")
+    
+    db_save_col1, db_save_col2, db_save_col3 = st.columns([2, 1, 1])
+    
+    with db_save_col1:
+        save_dataset_name = st.text_input("Dataset Name", placeholder="e.g., January 2025 Fraud Data", key="save_ds_name_input")
+    
+    with db_save_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        save_to_db_btn = st.button("💾 SAVE TO DATABASE", use_container_width=True, key="save_to_db_main", type="primary")
+    
+    with db_save_col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("⚙️ DB Settings", use_container_width=True, key="db_settings_btn"):
+            st.session_state.show_db_settings = True
+    
+    # Database settings expander
+    if st.session_state.get('show_db_settings', False):
+        with st.expander("Database Connection Settings", expanded=True):
+            db_set_col1, db_set_col2 = st.columns(2)
+            with db_set_col1:
+                st.session_state.db_host = st.text_input("Host", value=st.session_state.get('db_host', 'localhost'), key="db_host_set")
+                st.session_state.db_user = st.text_input("Username", value=st.session_state.get('db_user', 'root'), key="db_user_set")
+            with db_set_col2:
+                st.session_state.db_port = st.number_input("Port", value=st.session_state.get('db_port', 3306), key="db_port_set")
+                st.session_state.db_password = st.text_input("Password", value=st.session_state.get('db_password', 'Cyber2026'), type="password", key="db_pass_set")
+            
+            if st.button("🔌 Test Connection", key="test_conn_btn"):
+                db_service = DatabaseService(
+                    host=st.session_state.get('db_host', 'localhost'),
+                    port=st.session_state.get('db_port', 3306),
+                    user=st.session_state.get('db_user', 'root'),
+                    password=st.session_state.get('db_password', 'Cyber2026')
+                )
+                success, msg = db_service.test_connection()
+                if success:
+                    st.success(f"✅ {msg}")
+                else:
+                    st.error(f"❌ {msg}")
+    
+    # Handle Save to Database
+    if save_to_db_btn:
+        if not save_dataset_name:
+            st.error("⚠️ Please enter a dataset name!")
+        else:
+            with st.spinner("💾 Saving to MySQL database..."):
+                db_service = DatabaseService(
+                    host=st.session_state.get('db_host', 'localhost'),
+                    port=st.session_state.get('db_port', 3306),
+                    user=st.session_state.get('db_user', 'root'),
+                    password=st.session_state.get('db_password', 'Cyber2026')
+                )
+                
+                # Progress bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                def update_progress(current, total):
+                    progress = int((current / total) * 100)
+                    progress_bar.progress(progress)
+                    status_text.text(f"Saving... {current:,} / {total:,} records ({progress}%)")
+                
+                dataset_id, error_msg = db_service.save_dataset(
+                    name=save_dataset_name,
+                    description=f"Saved from Fraud Analysis Tool - {len(accounts)} accounts",
+                    accounts=accounts,
+                    source_filename=st.session_state.get('filename', ''),
+                    progress_callback=update_progress
+                )
+                db_service.disconnect()
+                
+                progress_bar.empty()
+                status_text.empty()
+                
+                if dataset_id:
+                    st.success(f"""
+                    ✅ **Data Saved Successfully!**
+                    - Dataset ID: {dataset_id}
+                    - Records: {len(accounts):,}
+                    - Database: gujarat_cyber_police
+                    - You can view this in MySQL Workbench
+                    """)
+                else:
+                    st.error(f"❌ Save failed: {error_msg}")
 
 
     st.markdown("---")
@@ -799,6 +910,545 @@ def render_results_page():
                 st.metric("Data Completeness", f"{qr.get('data_completeness_rate', 0):.1f}%")
 
 
+def render_view_database_page():
+    """Render the View Database page - Gujarat Cyber Police Data Management."""
+    st.title("🗄️ View Database")
+    st.markdown("**Gujarat Cyber Police** - Secure Data Management with Integrity Verification")
+    
+    # Database connection settings
+    with st.expander("⚙️ Database Connection Settings", expanded=False):
+        st.caption("Configure MySQL connection")
+        
+        db_col1, db_col2 = st.columns(2)
+        with db_col1:
+            db_host = st.text_input("Host", value="localhost", key="vdb_host")
+            db_user = st.text_input("Username", value="root", key="vdb_user")
+            db_name = st.text_input("Database Name", value="gujarat_cyber_police", key="vdb_dbname")
+        with db_col2:
+            db_port = st.number_input("Port", value=3306, key="vdb_port")
+            db_password = st.text_input("Password", value="Cyber2026", type="password", key="vdb_password")
+        
+        st.caption("💡 Change 'Database Name' to create/use a different database")
+        
+        if st.button("🔌 Test Connection", key="vdb_test_conn"):
+            db_service = DatabaseService(host=db_host, port=db_port, user=db_user, password=db_password, database=db_name)
+            success, message = db_service.test_connection()
+            if success:
+                st.success(f"✅ {message}")
+            else:
+                st.error(f"❌ {message}")
+    
+    # Get database settings
+    db_host = st.session_state.get('vdb_host', 'localhost')
+    db_port = st.session_state.get('vdb_port', 3306)
+    db_user = st.session_state.get('vdb_user', 'root')
+    db_password = st.session_state.get('vdb_password', 'Cyber2026')
+    db_name = st.session_state.get('vdb_dbname', 'gujarat_cyber_police')
+    
+    st.markdown("---")
+    
+    # Six action buttons
+    action_cols = st.columns(6)
+    
+    with action_cols[0]:
+        if st.button("📋 Datasets", use_container_width=True, type="primary", key="vdb_view_btn"):
+            st.session_state.vdb_action = 'view'
+    
+    with action_cols[1]:
+        if st.button("📊 View Full Data", use_container_width=True, type="primary", key="vdb_fulldata_btn"):
+            st.session_state.vdb_action = 'fulldata'
+    
+    with action_cols[2]:
+        if st.button("✅ Verify", use_container_width=True, type="primary", key="vdb_verify_btn"):
+            st.session_state.vdb_action = 'verify'
+    
+    with action_cols[3]:
+        if st.button("📂 Browse", use_container_width=True, type="primary", key="vdb_load_btn"):
+            st.session_state.vdb_action = 'load'
+    
+    with action_cols[4]:
+        if st.button("🔍 Search", use_container_width=True, type="primary", key="vdb_search_btn"):
+            st.session_state.vdb_action = 'search'
+    
+    with action_cols[5]:
+        if st.button("🗑️ Delete", use_container_width=True, type="primary", key="vdb_delete_btn"):
+            st.session_state.vdb_action = 'delete'
+    
+    st.markdown("---")
+    
+    # Handle actions
+    current_action = st.session_state.get('vdb_action', None)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # VIEW FULL DATA WITH EXCEL-LIKE FEATURES
+    if current_action == 'fulldata':
+        st.subheader("📊 View Full Data - Excel-Like Features")
+        
+        db_service = DatabaseService(host=db_host, port=db_port, user=db_user, password=db_password, database=db_name)
+        datasets = db_service.get_all_datasets()
+        
+        if not datasets:
+            st.warning("No saved datasets found")
+            if st.button("❌ Close", key="vdb_close_fulldata_empty"):
+                st.session_state.vdb_action = None
+                st.rerun()
+            db_service.disconnect()
+            return
+        
+        # Dataset selection
+        dataset_options = {f"{d['name']} ({d['total_accounts']:,} records)": d['id'] for d in datasets}
+        selected_dataset = st.selectbox("📁 Select Dataset", options=["-- Select Dataset --"] + list(dataset_options.keys()), key="vdb_fulldata_select")
+        
+        if selected_dataset != "-- Select Dataset --":
+            dataset_id = dataset_options[selected_dataset]
+            total_count = db_service.get_dataset_count(dataset_id)
+            
+            st.info(f"📊 Total Records: **{total_count:,}**")
+            
+            # Warning for large datasets
+            if total_count > 100000:
+                st.warning(f"⚠️ Large dataset ({total_count:,} records). Loading may take time. Consider using filters.")
+            
+            # ========== EXCEL-LIKE CONTROLS ==========
+            st.markdown("### 🎛️ Excel-Like Controls")
+            
+            # Row 1: Sort options
+            sort_col1, sort_col2 = st.columns(2)
+            with sort_col1:
+                sort_by = st.selectbox("📊 Sort By", [
+                    "Total Amount (High to Low)",
+                    "Total Amount (Low to High)",
+                    "Account Number (A-Z)",
+                    "Account Number (Z-A)",
+                    "Bank Name (A-Z)",
+                    "Bank Name (Z-A)",
+                    "District (A-Z)",
+                    "Total Transactions (High to Low)",
+                    "ACK Count (High to Low)",
+                    "Risk Score (High to Low)"
+                ], key="vdb_sort_by")
+            
+            with sort_col2:
+                max_rows = st.selectbox("📋 Max Rows to Load", [1000, 5000, 10000, 50000, 100000, "All"], index=0, key="vdb_max_rows")
+            
+            # Row 2: Filters
+            st.markdown("### 🔍 Filters")
+            filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+            
+            with filter_col1:
+                filter_account = st.text_input("🔢 Account Number Contains", key="vdb_filter_account")
+            with filter_col2:
+                filter_bank = st.text_input("🏦 Bank Name Contains", key="vdb_filter_bank")
+            with filter_col3:
+                filter_district = st.text_input("📍 District", key="vdb_filter_district")
+            with filter_col4:
+                filter_state = st.text_input("🗺️ State", key="vdb_filter_state")
+            
+            # Row 3: Amount filters
+            amount_col1, amount_col2, amount_col3, amount_col4 = st.columns(4)
+            with amount_col1:
+                min_amount = st.number_input("💰 Min Amount (₹)", min_value=0.0, value=0.0, key="vdb_min_amount")
+            with amount_col2:
+                max_amount = st.number_input("💰 Max Amount (₹)", min_value=0.0, value=0.0, key="vdb_max_amount")
+            with amount_col3:
+                min_txn = st.number_input("📈 Min Transactions", min_value=0, value=0, key="vdb_min_txn")
+            with amount_col4:
+                min_ack = st.number_input("🔖 Min ACK Count", min_value=0, value=0, key="vdb_min_ack")
+            
+            # Load Data Button
+            if st.button("📥 Load Data with Filters", type="primary", use_container_width=True, key="vdb_load_fulldata"):
+                with st.spinner("Loading data from database..."):
+                    # Build SQL query based on filters
+                    limit_val = None if max_rows == "All" else int(max_rows)
+                    
+                    # Determine sort column and order
+                    sort_mapping = {
+                        "Total Amount (High to Low)": ("total_amount", "DESC"),
+                        "Total Amount (Low to High)": ("total_amount", "ASC"),
+                        "Account Number (A-Z)": ("account_number", "ASC"),
+                        "Account Number (Z-A)": ("account_number", "DESC"),
+                        "Bank Name (A-Z)": ("bank_name", "ASC"),
+                        "Bank Name (Z-A)": ("bank_name", "DESC"),
+                        "District (A-Z)": ("district", "ASC"),
+                        "Total Transactions (High to Low)": ("total_transactions", "DESC"),
+                        "ACK Count (High to Low)": ("ack_count", "DESC"),
+                        "Risk Score (High to Low)": ("risk_score", "DESC")
+                    }
+                    sort_column, sort_order = sort_mapping.get(sort_by, ("total_amount", "DESC"))
+                    
+                    # Load data with custom query
+                    df = db_service.load_dataset_filtered(
+                        dataset_id=dataset_id,
+                        sort_column=sort_column,
+                        sort_order=sort_order,
+                        limit=limit_val,
+                        filter_account=filter_account if filter_account else None,
+                        filter_bank=filter_bank if filter_bank else None,
+                        filter_district=filter_district if filter_district else None,
+                        filter_state=filter_state if filter_state else None,
+                        min_amount=min_amount if min_amount > 0 else None,
+                        max_amount=max_amount if max_amount > 0 else None,
+                        min_transactions=min_txn if min_txn > 0 else None,
+                        min_ack_count=min_ack if min_ack > 0 else None
+                    )
+                    
+                    if df is not None and len(df) > 0:
+                        st.session_state.vdb_fulldata_df = df
+                        st.success(f"✅ Loaded {len(df):,} records")
+                    else:
+                        st.warning("No records found matching filters")
+                        st.session_state.vdb_fulldata_df = None
+            
+            # Display loaded data
+            if 'vdb_fulldata_df' in st.session_state and isinstance(st.session_state.vdb_fulldata_df, pd.DataFrame):
+                df = st.session_state.vdb_fulldata_df
+                
+                st.markdown("---")
+                st.markdown(f"### 📋 Data Table ({len(df):,} records)")
+                
+                # Quick stats
+                stat_cols = st.columns(5)
+                with stat_cols[0]:
+                    st.metric("Records", f"{len(df):,}")
+                with stat_cols[1]:
+                    st.metric("Total Amount", f"₹{df['Total Amount'].sum():,.0f}")
+                with stat_cols[2]:
+                    st.metric("Avg Amount", f"₹{df['Total Amount'].mean():,.0f}")
+                with stat_cols[3]:
+                    st.metric("Total Transactions", f"{df['Total Transactions'].sum():,}")
+                with stat_cols[4]:
+                    st.metric("Unique Districts", f"{df['District'].nunique()}")
+                
+                # Data table with Streamlit's built-in features
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    height=500,
+                    column_config={
+                        "Total Amount": st.column_config.NumberColumn(format="₹%.2f"),
+                        "Total Disputed Amount": st.column_config.NumberColumn(format="₹%.2f"),
+                        "Risk Score": st.column_config.NumberColumn(format="%.1f")
+                    }
+                )
+                
+                # Download options
+                st.markdown("### 📥 Download Options")
+                dl_cols = st.columns(3)
+                
+                with dl_cols[0]:
+                    csv_data = df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label=f"⬇️ Download CSV ({len(df):,} rows)",
+                        data=csv_data,
+                        file_name=f"data_export_{timestamp}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                
+                with dl_cols[1]:
+                    # Excel download
+                    buffer = BytesIO()
+                    df.to_excel(buffer, index=False, engine='openpyxl')
+                    buffer.seek(0)
+                    st.download_button(
+                        label=f"⬇️ Download Excel ({len(df):,} rows)",
+                        data=buffer.getvalue(),
+                        file_name=f"data_export_{timestamp}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                
+                with dl_cols[2]:
+                    # Summary by district
+                    if st.button("📊 Generate District Summary", use_container_width=True, key="vdb_gen_district_summary_btn"):
+                        summary = df.groupby('District').agg({
+                            'Fraudster Bank Account Number': 'count',
+                            'Total Amount': 'sum',
+                            'Total Transactions': 'sum',
+                            'ACK Count': 'sum'
+                        }).reset_index()
+                        summary.columns = ['District', 'Account Count', 'Total Amount', 'Total Transactions', 'Total ACKs']
+                        summary = summary.sort_values('Total Amount', ascending=False)
+                        st.session_state.vdb_district_summary_df = summary
+                
+                # Show district summary if generated
+                if 'vdb_district_summary_df' in st.session_state and isinstance(st.session_state.vdb_district_summary_df, pd.DataFrame):
+                    st.markdown("#### 📊 District-wise Summary")
+                    st.dataframe(st.session_state.vdb_district_summary_df, use_container_width=True)
+                    
+                    summary_csv = st.session_state.vdb_district_summary_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="⬇️ Download District Summary",
+                        data=summary_csv,
+                        file_name=f"district_summary_{timestamp}.csv",
+                        mime="text/csv"
+                    )
+        
+        if st.button("❌ Close", key="vdb_close_fulldata"):
+            st.session_state.vdb_action = None
+            st.session_state.vdb_fulldata_df = None
+            st.session_state.vdb_district_summary_df = None
+            st.rerun()
+        
+        db_service.disconnect()
+        return
+    
+    # VIEW DATASETS
+    if current_action == 'view':
+        st.subheader("📋 All Saved Datasets")
+        st.info("**ℹ️ Viewing all datasets with verification status**")
+        
+        db_service = DatabaseService(host=db_host, port=db_port, user=db_user, password=db_password, database=db_name)
+        datasets = db_service.get_all_datasets()
+        db_service.disconnect()
+        
+        if datasets:
+            view_data = []
+            for d in datasets:
+                verified_status = "✅ Verified" if d.get('verified') else "⚠️ Not Verified"
+                view_data.append({
+                    'ID': d['id'],
+                    'Name': d['name'],
+                    'Description': d.get('description', ''),
+                    'Total Accounts': f"{d['total_accounts']:,}",
+                    'Total Amount': f"₹{d['total_amount']:,.0f}",
+                    'Status': verified_status,
+                    'Created At': d['created_at'],
+                    'Source File': d.get('source_filename', '')
+                })
+            
+            view_df = pd.DataFrame(view_data)
+            st.dataframe(view_df, use_container_width=True)
+            st.success(f"✅ Found {len(datasets)} saved dataset(s)")
+        else:
+            st.warning("No saved datasets found in database")
+        
+        if st.button("❌ Close", key="vdb_close_view"):
+            st.session_state.vdb_action = None
+            st.rerun()
+    
+    # VERIFY DATA INTEGRITY
+    elif current_action == 'verify':
+        st.subheader("✅ Verify Data Integrity")
+        st.info("**ℹ️ Verify that saved data is complete and accurate**")
+        
+        db_service = DatabaseService(host=db_host, port=db_port, user=db_user, password=db_password, database=db_name)
+        datasets = db_service.get_all_datasets()
+        
+        if datasets:
+            dataset_options = {f"{d['name']} ({d['total_accounts']:,} accounts)": d['id'] for d in datasets}
+            selected_dataset = st.selectbox("Select Dataset to Verify", options=["-- Select --"] + list(dataset_options.keys()), key="vdb_verify_select")
+            
+            if selected_dataset != "-- Select --":
+                dataset_id = dataset_options[selected_dataset]
+                
+                if st.button("🔍 Run Integrity Check", type="primary", key="vdb_run_verify"):
+                    with st.spinner("Verifying data integrity..."):
+                        is_valid, message = db_service.verify_dataset_integrity(dataset_id)
+                        
+                        if is_valid:
+                            st.success(message)
+                            st.balloons()
+                        else:
+                            st.error(f"❌ INTEGRITY CHECK FAILED: {message}")
+                            st.warning("⚠️ This dataset may have data corruption. Please re-save from original source.")
+        else:
+            st.warning("No saved datasets found")
+        
+        if st.button("❌ Close", key="vdb_close_verify"):
+            st.session_state.vdb_action = None
+            st.rerun()
+        
+        db_service.disconnect()
+    
+    # LOAD DATASET WITH PAGINATION (for large data)
+    elif current_action == 'load':
+        st.subheader("📂 Load & Browse Dataset")
+        st.info("**ℹ️ For large datasets, data is loaded in pages to prevent memory issues**")
+        
+        db_service = DatabaseService(host=db_host, port=db_port, user=db_user, password=db_password, database=db_name)
+        datasets = db_service.get_all_datasets()
+        
+        if datasets:
+            dataset_options = {f"{d['name']} ({d['total_accounts']:,} accounts) - {d['created_at']}": d['id'] for d in datasets}
+            selected_dataset = st.selectbox("Select Dataset", options=["-- Select --"] + list(dataset_options.keys()), key="vdb_load_select")
+            
+            if selected_dataset != "-- Select --":
+                dataset_id = dataset_options[selected_dataset]
+                total_count = db_service.get_dataset_count(dataset_id)
+                
+                st.info(f"📊 Total records: **{total_count:,}**")
+                
+                # Pagination settings
+                page_size = st.selectbox("Rows per page", [100, 500, 1000, 5000], index=1, key="vdb_page_size")
+                total_pages = max(1, (total_count + page_size - 1) // page_size)
+                
+                page_col1, page_col2, page_col3 = st.columns([1, 2, 1])
+                with page_col2:
+                    current_page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, key="vdb_current_page")
+                    st.caption(f"Total pages: {total_pages:,}")
+                
+                # Load current page
+                offset = (current_page - 1) * page_size
+                
+                if st.button("📥 Load Page", type="primary", key="vdb_load_page"):
+                    with st.spinner(f"Loading rows {offset+1:,} to {min(offset+page_size, total_count):,}..."):
+                        page_df = db_service.load_dataset(dataset_id, limit=page_size, offset=offset)
+                        if page_df is not None:
+                            st.session_state.vdb_page_data = page_df
+                            st.success(f"✅ Loaded {len(page_df):,} records")
+                
+                # Show page data
+                if 'vdb_page_data' in st.session_state and st.session_state.vdb_page_data is not None:
+                    st.dataframe(st.session_state.vdb_page_data, use_container_width=True)
+                
+                st.markdown("---")
+                st.subheader("📥 Export Full Dataset")
+                st.warning(f"⚠️ Full export will download all **{total_count:,}** records. For very large data (>1 lakh rows), use CSV format.")
+                
+                export_cols = st.columns(2)
+                with export_cols[0]:
+                    if st.button("📄 Export Full CSV", use_container_width=True, key="vdb_export_csv"):
+                        with st.spinner("Exporting all data to CSV (this may take time for large datasets)..."):
+                            # Load all data in chunks and combine
+                            all_chunks = []
+                            for chunk in db_service.load_dataset_chunked(dataset_id, chunk_size=50000):
+                                all_chunks.append(chunk)
+                            
+                            if all_chunks:
+                                full_df = pd.concat(all_chunks, ignore_index=True)
+                                csv_data = full_df.to_csv(index=False).encode('utf-8')
+                                st.session_state.vdb_full_csv = csv_data
+                                st.success(f"✅ Prepared {len(full_df):,} records for download")
+                
+                if 'vdb_full_csv' in st.session_state and st.session_state.vdb_full_csv:
+                    st.download_button(
+                        label="⬇️ Download Full CSV",
+                        data=st.session_state.vdb_full_csv,
+                        file_name=f"full_export_{timestamp}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+            
+            if st.button("❌ Close", key="vdb_close_load"):
+                st.session_state.vdb_action = None
+                st.session_state.vdb_page_data = None
+                st.session_state.vdb_full_csv = None
+                st.rerun()
+        else:
+            st.warning("No saved datasets found")
+            if st.button("❌ Close", key="vdb_close_load_empty"):
+                st.session_state.vdb_action = None
+                st.rerun()
+        
+        db_service.disconnect()
+    
+    # SEARCH DATA (fast indexed search)
+    elif current_action == 'search':
+        st.subheader("🔍 Search Accounts")
+        st.info("**ℹ️ Fast indexed search - works efficiently even with crores of records**")
+        
+        db_service = DatabaseService(host=db_host, port=db_port, user=db_user, password=db_password, database=db_name)
+        datasets = db_service.get_all_datasets()
+        
+        if datasets:
+            dataset_options = {f"{d['name']} ({d['total_accounts']:,} accounts)": d['id'] for d in datasets}
+            selected_dataset = st.selectbox("Select Dataset to Search", options=["-- Select --"] + list(dataset_options.keys()), key="vdb_search_dataset")
+            
+            if selected_dataset != "-- Select --":
+                dataset_id = dataset_options[selected_dataset]
+                
+                search_col1, search_col2, search_col3 = st.columns(3)
+                with search_col1:
+                    search_account = st.text_input("Account Number (partial)", key="vdb_search_account")
+                with search_col2:
+                    search_district = st.text_input("District (exact)", key="vdb_search_district")
+                with search_col3:
+                    search_min_amount = st.number_input("Min Amount (₹)", min_value=0.0, value=0.0, key="vdb_search_amount")
+                
+                max_results = st.slider("Max Results", 100, 10000, 1000, key="vdb_max_results")
+                
+                if st.button("🔍 Search", type="primary", key="vdb_do_search"):
+                    with st.spinner("Searching..."):
+                        results = db_service.search_accounts(
+                            dataset_id=dataset_id,
+                            account_number=search_account if search_account else None,
+                            district=search_district if search_district else None,
+                            min_amount=search_min_amount if search_min_amount > 0 else None,
+                            limit=max_results
+                        )
+                        
+                        if results is not None and len(results) > 0:
+                            st.session_state.vdb_search_results = results
+                            st.success(f"✅ Found {len(results):,} matching records")
+                        else:
+                            st.warning("No matching records found")
+                            st.session_state.vdb_search_results = None
+                
+                # Show search results
+                if 'vdb_search_results' in st.session_state and st.session_state.vdb_search_results is not None:
+                    st.dataframe(st.session_state.vdb_search_results, use_container_width=True)
+                    
+                    csv_data = st.session_state.vdb_search_results.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="⬇️ Download Search Results",
+                        data=csv_data,
+                        file_name=f"search_results_{timestamp}.csv",
+                        mime="text/csv"
+                    )
+        else:
+            st.warning("No saved datasets found")
+        
+        if st.button("❌ Close", key="vdb_close_search"):
+            st.session_state.vdb_action = None
+            st.session_state.vdb_search_results = None
+            st.rerun()
+        
+        db_service.disconnect()
+    
+    # DELETE DATASET
+    elif current_action == 'delete':
+        st.subheader("🗑️ Delete Dataset")
+        st.error("""
+        **⚠️ WARNING - This action will:**
+        - Permanently delete the selected dataset
+        - Remove all associated account records
+        - This action CANNOT be undone!
+        """)
+        
+        db_service = DatabaseService(host=db_host, port=db_port, user=db_user, password=db_password, database=db_name)
+        datasets = db_service.get_all_datasets()
+        
+        if datasets:
+            dataset_options = {f"{d['name']} (ID: {d['id']}, {d['total_accounts']:,} accounts, ₹{d['total_amount']:,.0f})": d['id'] for d in datasets}
+            selected_delete = st.selectbox("Select Dataset to DELETE", options=["-- Select --"] + list(dataset_options.keys()), key="vdb_delete_select")
+            
+            delete_col1, delete_col2 = st.columns(2)
+            with delete_col1:
+                if st.button("🗑️ Confirm DELETE", type="primary", use_container_width=True, key="vdb_confirm_delete"):
+                    if selected_delete != "-- Select --":
+                        dataset_id = dataset_options[selected_delete]
+                        with st.spinner("Deleting dataset..."):
+                            if db_service.delete_dataset(dataset_id):
+                                st.success("✅ Dataset deleted successfully!")
+                                st.session_state.vdb_action = None
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to delete dataset")
+            
+            with delete_col2:
+                if st.button("❌ Cancel", use_container_width=True, key="vdb_cancel_delete"):
+                    st.session_state.vdb_action = None
+                    st.rerun()
+        else:
+            st.warning("No saved datasets found in database")
+            if st.button("❌ Close", key="vdb_close_delete"):
+                st.session_state.vdb_action = None
+                st.rerun()
+        
+        db_service.disconnect()
+
+
 def main():
     """Main application entry point."""
     # Initialize session state
@@ -822,6 +1472,10 @@ def main():
         render_district_download_page()
     elif page == 'excel_merger':
         render_merge_files_page()
+    elif page == 'call_notice_merge':
+        render_call_notice_merge_page()
+    elif page == 'view_database':
+        render_view_database_page()
     else:
         render_upload_page()
 

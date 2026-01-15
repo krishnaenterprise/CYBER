@@ -1,8 +1,5 @@
 """
-Aggregation Engine for the Fraud Analysis Application - OPTIMIZED FOR LARGE DATA.
-
-Groups transactions by bank account number and calculates aggregate statistics.
-Optimized for millions of rows using vectorized pandas operations.
+Aggregation Engine - FAST but with ALL features preserved.
 """
 
 from typing import List
@@ -13,7 +10,7 @@ from src.models import AggregatedAccount, ColumnMapping
 
 
 class AggregationEngine:
-    """Engine for aggregating transaction data by account number - OPTIMIZED."""
+    """Engine for aggregating transaction data - FAST with all features."""
     
     def get_most_common(self, series: pd.Series) -> str:
         """Return the most common non-null value in a series."""
@@ -48,8 +45,8 @@ class AggregationEngine:
         mapping: ColumnMapping
     ) -> List[AggregatedAccount]:
         """
-        Group transactions by account number - OPTIMIZED using pandas agg().
-        This is 10-50x faster than row-by-row iteration for large datasets.
+        Group transactions by account number - FAST.
+        Collects ALL unique ACK numbers for each account.
         """
         if df.empty:
             return []
@@ -58,8 +55,10 @@ class AggregationEngine:
         if not account_col or account_col not in df.columns:
             return []
         
-        # Filter out null/empty account numbers first
-        df = df[df[account_col].notna() & (df[account_col].astype(str).str.strip() != '')]
+        # Filter out null/empty account numbers
+        df = df.copy()
+        df[account_col] = df[account_col].astype(str).str.strip()
+        df = df[~df[account_col].isin(['', 'nan', 'None', 'NaN', '<NA>'])]
         
         if df.empty:
             return []
@@ -74,112 +73,76 @@ class AggregationEngine:
         district_col = mapping.district
         state_col = mapping.state
         
-        # Build aggregation dictionary
-        agg_dict = {account_col: 'count'}  # Transaction count
+        # Ensure numeric columns
+        if amount_col and amount_col in df.columns:
+            df[amount_col] = pd.to_numeric(df[amount_col], errors='coerce').fillna(0)
+        if disputed_col and disputed_col in df.columns:
+            df[disputed_col] = pd.to_numeric(df[disputed_col], errors='coerce').fillna(0)
+        
+        # Build aggregation dict using named aggregation (FAST - no lambdas)
+        agg_dict = {'_count': (account_col, 'count')}
         
         if amount_col and amount_col in df.columns:
-            agg_dict[amount_col] = 'sum'
+            agg_dict['total_amount'] = (amount_col, 'sum')
         
         if disputed_col and disputed_col in df.columns:
-            agg_dict[disputed_col] = 'sum'
+            agg_dict['total_disputed'] = (disputed_col, 'sum')
         
-        # For mode columns, we'll use a custom approach
-        mode_cols = []
+        # Use 'first' for text columns
         if bank_name_col and bank_name_col in df.columns:
-            mode_cols.append(('bank_name', bank_name_col))
+            agg_dict['bank_name'] = (bank_name_col, 'first')
         if ifsc_col and ifsc_col in df.columns:
-            mode_cols.append(('ifsc_code', ifsc_col))
+            agg_dict['ifsc_code'] = (ifsc_col, 'first')
         if address_col and address_col in df.columns:
-            mode_cols.append(('address', address_col))
+            agg_dict['address'] = (address_col, 'first')
         if district_col and district_col in df.columns:
-            mode_cols.append(('district', district_col))
+            agg_dict['district'] = (district_col, 'first')
         if state_col and state_col in df.columns:
-            mode_cols.append(('state', state_col))
+            agg_dict['state'] = (state_col, 'first')
         
-        # Perform main aggregation
-        grouped = df.groupby(account_col, dropna=False)
+        # Single fast groupby for numeric aggregations
+        result = df.groupby(account_col, sort=False).agg(**agg_dict).reset_index()
         
-        # Get counts and sums efficiently
-        agg_result = grouped.agg(agg_dict)
-        agg_result.columns = ['total_transactions'] + [c for c in agg_result.columns[1:]]
-        
-        # Rename amount columns
-        col_rename = {}
-        if amount_col and amount_col in df.columns:
-            col_rename[amount_col] = 'total_amount'
-        if disputed_col and disputed_col in df.columns:
-            col_rename[disputed_col] = 'total_disputed'
-        agg_result = agg_result.rename(columns=col_rename)
-        
-        # Get mode values for each group (optimized)
-        mode_results = {}
-        for name, col in mode_cols:
-            mode_results[name] = grouped[col].agg(lambda x: self._fast_mode(x))
-        
-        # Get acknowledgement numbers (concatenated)
+        # Collect ALL unique ACK numbers per account (separate operation for speed)
+        ack_dict = {}
         if ack_col and ack_col in df.columns:
-            ack_result = grouped[ack_col].agg(lambda x: self._concat_unique(x))
-        else:
-            ack_result = pd.Series([''] * len(agg_result), index=agg_result.index)
+            # Group and collect unique ACK numbers
+            ack_grouped = df.groupby(account_col)[ack_col].apply(
+                lambda x: ';'.join(x.dropna().astype(str).unique())
+            )
+            ack_dict = ack_grouped.to_dict()
         
         # Build result list
         aggregated_accounts = []
         
-        for account_number in agg_result.index:
-            row = agg_result.loc[account_number]
+        for i in range(len(result)):
+            row = result.iloc[i]
+            acc_num = str(row[account_col])
             
-            total_transactions = int(row.get('total_transactions', 0))
+            total_transactions = int(row['_count'])
             total_amount = float(row.get('total_amount', 0) or 0)
             total_disputed = float(row.get('total_disputed', 0) or 0)
             
-            bank_name = mode_results.get('bank_name', pd.Series()).get(account_number, '')
-            ifsc_code = mode_results.get('ifsc_code', pd.Series()).get(account_number, '')
-            address = mode_results.get('address', pd.Series()).get(account_number, '')
-            district = mode_results.get('district', pd.Series()).get(account_number, '')
-            state = mode_results.get('state', pd.Series()).get(account_number, '')
-            ack_numbers = ack_result.get(account_number, '')
+            # Get all unique ACK numbers for this account
+            ack_numbers = ack_dict.get(acc_num, '')
             
             risk_score = self.calculate_risk_score(total_transactions, total_amount)
             
             aggregated_accounts.append(AggregatedAccount(
-                account_number=str(account_number),
-                bank_name=str(bank_name) if bank_name else '',
-                ifsc_code=str(ifsc_code) if ifsc_code else '',
-                address=str(address) if address else '',
-                district=str(district) if district else '',
-                state=str(state) if state else '',
+                account_number=acc_num,
+                bank_name=str(row.get('bank_name', '') or ''),
+                ifsc_code=str(row.get('ifsc_code', '') or ''),
+                address=str(row.get('address', '') or ''),
+                district=str(row.get('district', '') or ''),
+                state=str(row.get('state', '') or ''),
                 total_transactions=total_transactions,
-                acknowledgement_numbers=str(ack_numbers) if ack_numbers else '',
+                acknowledgement_numbers=ack_numbers,
                 total_amount=total_amount,
                 total_disputed_amount=total_disputed,
                 risk_score=risk_score
             ))
         
         return aggregated_accounts
-    
-    def _fast_mode(self, series: pd.Series) -> str:
-        """Get mode value quickly."""
-        non_null = series.dropna()
-        if len(non_null) == 0:
-            return ''
-        
-        # Filter empty strings
-        non_empty = non_null[non_null.astype(str).str.strip() != '']
-        if len(non_empty) == 0:
-            return ''
-        
-        # Get value counts and return most common
-        counts = non_empty.value_counts()
-        if len(counts) == 0:
-            return ''
-        
-        return str(counts.index[0])
-    
-    def _concat_unique(self, series: pd.Series) -> str:
-        """Concatenate unique non-empty values."""
-        non_null = series.dropna().astype(str)
-        unique_vals = non_null[non_null.str.strip() != ''].unique()
-        return ';'.join(unique_vals)
     
     def sort_results(
         self, 
